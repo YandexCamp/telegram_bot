@@ -1,0 +1,231 @@
+import re
+import unicodedata
+from dataclasses import dataclass
+from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Невидимые/ноль-ширинные: ZWSP, ZWNJ, ZWJ, WORD JOINER, BOM
+ZW_CLASS = "[\u200B\u200C\u200D\u2060\uFEFF]"
+
+def normalize_unicode(text: str) -> str:
+    """
+    NFKC + casefold, убираем невидимые, схлопываем повторные пробелы.
+    """
+    t = unicodedata.normalize("NFKC", text).casefold()
+    t = re.sub(ZW_CLASS, "", t)
+    t = re.sub(r"[ \t\r\f\v]+", " ", t)
+    return t.strip()
+
+# Регулярки для безопасных областей
+RE_CODE_BLOCK = re.compile(r"``````", re.DOTALL | re.IGNORECASE)
+RE_INLINE_CODE = re.compile(r"`[^`\n]+`", re.IGNORECASE)
+RE_URL = re.compile(r"https?://\S+", re.IGNORECASE)
+
+def strip_safe_areas(text: str) -> str:
+    """
+    Удаляем code fences, inline-code, URL, чтобы не триггериться на примерах.
+    """
+    t = RE_CODE_BLOCK.sub(" ", text)
+    t = RE_INLINE_CODE.sub(" ", t)
+    t = RE_URL.sub(" ", t)
+    return t
+
+# Список шаблонов для обнаружения промпт-инжекций
+INJECTION_PATTERNS = [
+    r"\byour instructions\b",
+    r"\byour prompt\b",
+    r"\bsystem prompt\b",
+    r"\bsystem\s*[:=]\s*",
+    r"\byou are\b.*?\b(an?|the)\b.*?\b(assistant|ai|bot|llm|model|hacker|friend|god|master)\b",
+    r"\bignore\s+previous\s+instructions?\b",
+    r"\bdisregard\s+all\s+prior\s+prompts?\b",
+    r"\bas\s+a\s+(friend|developer|admin|god|expert|hacker)\b",
+    r"\bact\s+as\s+(if\s+you\s+are|a)\s+(.*)",
+    r"\bне\s+следуй\s+предыдущим\s+инструкциям\b",
+    r"\bзабудь\b(?:\s+\S+)*?\s+\bинструкции\b",
+    r"\bты\s+должен\b.*?\b(игнорировать|забыть|сменить)\b",
+    r"\boverride\s+system\s+rules\b",
+    r"\bpretend\s+to\s+be\b",
+    r"\bfrom\s+now\s+on\b",
+    r"\breset\s+your\s+identity\b",
+    r"\bnew\s+instructions?\b.*?\b(from|given|are)\b",
+    r"\boutput\s+only\b",
+    r"\bdo\s+not\s+say\b",
+    r"\bне\s+говори\b.*?\b(это|что|никому)\b",
+    r"\bsecret\s+word\b",
+    r"\bраскрой\s+секрет\b",
+    r"\bвыведи\s+весь\s+промпт\b",
+    r"\bshow\s+me\s+the\s+system\s+prompt\b",
+
+    # --- дополнительные паттерны (англ/рус) ---
+    # попытки отключить фильтры/политику/безопасность
+    r"\bdisable\s+(safety|filters|moderation|policy|guardrails)\b",
+    r"\bturn\s+off\s+(safety|filters|moderation)\b",
+    r"\bstop\s+following\s+polic(y|ies)\b",
+    r"\bdo\s+not\s+apply\s+policy\b",
+    r"\bno\s+safety\b",
+    r"\bобход\s+фильтров\b",
+    r"\bигнорируй\s+политику\b",
+    r"\bне\s+применяй\s+ограничения\b",
+
+    # "developer mode" / "jailbreak" маркеры
+    r"\bdeveloper\s+mode\b",
+    r"\benable\s+developer\s+mode\b",
+    r"\bjailbreak\b",
+    r"\broot\s+mode\b",
+    r"\bsuperuser\b",
+    r"\benable\s+root\b",
+    r"\bunlock\s+hidden\s+features\b",
+
+    # команды на выполнение кода / shell / exec
+    r"\brun\s+the\s+following\s+command\b",
+    r"\bexecute\s+this\b",
+    r"\bexec\s+:\s*",
+    r"\bbash\s+-c\b",
+    r"\bcurl\s+http\b",
+    r"\bwget\s+http\b",
+    r"\bdownload\s+and\s+run\b",
+    r"\bopen\s+file\b",
+    r"\bread\s+file\b",
+    r"\bprint\s+file\b",
+    r"\bcat\s+/etc\b",  # пример попытки прочитать системный файл
+
+    # эксфильтрация секретов / ключей / токенов / кредиты
+    r"\b(api|api[_\s-]?key|secret|token|ssh[-_]?key|private[_\s-]?key)\b",
+    r"\bcredit\s+card\b",
+    r"\bcard\s+number\b",
+    r"\bpassword\b",
+    r"\bpassphrase\b",
+    r"\bпоказать\s+ключ\b",
+    r"\bвыведи\s+api[-_\s]?ключ\b",
+    r"\bотдай\s+токен\b",
+
+    # запросы конфиденциальной информации / внутреннего состояния
+    r"\bwhat\s+is\s+your\s+prompt\b",
+    r"\bshow\s+internal\b",
+    r"\binternal\s+state\b",
+    r"\bhidden\s+instructions\b",
+    r"\bread\s+memory\b",
+    r"\bhistory\s+of\s+conversation\b",
+    r"\bconversation\s+log\b",
+    r"\bпокажи\s+внутреннее\b",
+    r"\bпамять\s+модели\b",
+
+    # попытки получить chain-of-thought / скрытую логику
+    r"\bexplain\s+step[-\s]?by[-\s]?step\b",
+    r"\bshow\s+your\s+chain\s+of\s+thought\b",
+    r"\bwalk\s+me\s+through\s+your\s+reasoning\b",
+    r"\bдокажи\s+свои\s+мысли\b",
+    r"\bраскрой\s+свою\s+цепочку\s+мыслей\b",
+
+    # кодировки / обфускация (base64, hex, rot, leetspeak)
+    r"\bbase64\b",
+    r"\bdata\s*:\s*text\/plain;base64\b",
+    r"\b0x[0-9a-fA-F]{8,}\b",  # hex sequence
+    r"\brot13\b",
+    r"\b(0b[01]{8,})\b",
+    r"\bdecode\s+this\b",
+    r"\bпереведи\s+из\s+base64\b",
+    r"\bзашифровано\b",
+
+    # делимитеры / инлайнинг инструкций
+    r"----+",
+    r"#####",
+    r"~{3,}",
+    r"```.+?```",                     # блок кода
+    r"<\!--.*?-->",                  # HTML комментарии
+    r"\[hidden\]",
+    r"\[system\]",
+    r"\[instructions\]",
+
+    # URL / data exfil / external resource загрузки
+    r"https?:\/\/\S+",
+    r"data:text\/\S+;base64,",
+    r"\bconnect\s+to\s+http\b",
+    r"\bvisit\s+this\s+link\b",
+    r"\bopen\s+the\s+following\s+url\b",
+
+    # шаблоны для попыток заставить выдать-код/инструкции (включая вредоносные)
+    r"\bprovide\s+the\s+code\b",
+    r"\bshow\s+me\s+how\s+to\b",
+    r"\bexplain\s+how\s+to\b",        # осторожно: широкое, может давать false positives
+    r"\bпокажи\s+как\s+сделать\b",
+    r"\bинструкции\s+по\b",
+
+    # попытки скрыть просьбу в длинном/замаскированном тексте
+    r"\bignore\s+all\s+text\s+before\b",
+    r"\btake\s+only\s+the\s+text\s+between\b",
+    r"\btake\s+everything\s+after\b",
+    r"\bтекст\s+после\s+этого\b",
+
+    # попытки заставить "вырвать" тренировочные данные / private data
+    r"\bprovide\s+training\s+data\b",
+    r"\bshow\s+examples\s+from\s+your\s+training\b",
+    r"\brecreate\s+training\b",
+
+    # попытки обойти лимиты/фильтры через многословие или смешанные языки
+    r"\brepeat\s+after\s+me\b",
+    r"\bsay\s+the\s+magic\s+word\b",
+    r"\bif\s+you\s+are\s+an\s+assistant\s+say\b",
+    r"\bесли\s+ты\s+ассистент\s+скажи\b",
+
+    # специфичные маркеры для "response-only" / форматирования вывода
+    r"\breturn\s+only\b",
+    r"\bonly\s+output\b",
+    r"\bбез\s+объяснений\b",
+    r"\bбез\s+комментариев\b",
+
+    # попытки управления токенами / "передай мне все токены"
+    r"\bgive\s+me\s+all\s+tokens\b",
+    r"\bshow\s+token\s+usage\b",
+    r"\bвыведи\s+все\s+токены\b",
+]
+
+# Компилируем все шаблоны заранее для производительности
+COMPILED_PATTERNS = [re.compile(pattern, re.IGNORECASE | re.UNICODE) for pattern in INJECTION_PATTERNS]
+
+@dataclass
+class Detection:
+    is_suspicious: bool
+    score: int
+    regex_hits: List[str]
+    phrase_hits: List[str]
+
+class PromptInjectionFilter:
+    def __init__(self):
+        logger.info("PromptInjectionFilter: using regex patterns only")
+
+    @staticmethod
+    def preprocess(text: str) -> str:
+        t = normalize_unicode(text)
+        t = strip_safe_areas(t)
+        return t
+
+    def detect(self, text: str) -> Detection:
+        t = self.preprocess(text)
+        regex_hits = []
+        
+        # Проверка всех скомпилированных шаблонов
+        for pattern in COMPILED_PATTERNS:
+            if pattern.search(t):
+                regex_hits.append(pattern.pattern)
+        
+        # Скоринг: каждое совпадение = 1 балл
+        score = len(regex_hits)
+        is_suspicious = score >= 3  # порог срабатывания
+        
+        detection = Detection(
+            is_suspicious=is_suspicious,
+            score=score,
+            regex_hits=regex_hits,
+            phrase_hits=[],  # больше не используется
+        )
+        
+        if detection.is_suspicious:
+            logger.warning(
+                f"Prompt injection detected: score={detection.score}, "
+                f"regex_hits={detection.regex_hits}"
+            )
+        return detection

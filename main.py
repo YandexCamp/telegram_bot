@@ -1,187 +1,11 @@
+# -*- coding: utf-8 -*-
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 import logging
 import jwt
 import time
-import re
-import unicodedata
-from dataclasses import dataclass
-from typing import List, Dict, Any
-
-# ---- Prompt Injection Detection ----
-
-# Невидимые/ноль-ширинные: ZWSP, ZWNJ, ZWJ, WORD JOINER, BOM
-ZW_CLASS = "[\u200B\u200C\u200D\u2060\uFEFF]"
-
-def normalize_unicode(text: str) -> str:
-    """
-    NFKC + casefold, убираем невидимые, схлопываем повторные пробелы.
-    """
-    t = unicodedata.normalize("NFKC", text).casefold()
-    t = re.sub(ZW_CLASS, "", t)
-    t = re.sub(r"[ \t\r\f\v]+", " ", t)
-    return t.strip()
-
-# Регулярки для безопасных областей
-RE_CODE_BLOCK = re.compile(r"``````", re.DOTALL | re.IGNORECASE)
-RE_INLINE_CODE = re.compile(r"`[^`\n]+`", re.IGNORECASE)
-RE_URL = re.compile(r"https?://\S+", re.IGNORECASE)
-
-def strip_safe_areas(text: str) -> str:
-    """
-    Удаляем code fences, inline-code, URL, чтобы не триггериться на примерах.
-    """
-    t = RE_CODE_BLOCK.sub(" ", text)
-    t = RE_INLINE_CODE.sub(" ", t)
-    t = RE_URL.sub(" ", t)
-    return t
-
-# Агрегированный regex для подозрительных паттернов
-SUSPECT_REGEX = re.compile(
-    r"""(?ixu)                          # флаги: ignorecase, verbose, unicode
-    \bignore\b|
-    \bdisregard\b|
-    \b(override|sudo|admin|secret|confidential)\b|
-    \b(system\W*prompt|reveal\W*(the\W*)?system\W*prompt)\b|
-    \b(ignore\W*(all\W*)?previous\W*instructions?)\b|
-    \b(as\W*a\W*friend)\b|
-    \b(your\W*instructions?)\b|
-    \b(pretend\W*to\W*be|act\W*as)\b|
-
-    # Русские варианты
-    \b(игнор\w*)\b|
-    \b(забудь)\b|
-    \b(предыдущ\w*\W*инструкц\w*)\b|
-    \b(системн\w*\W*промпт|раскрой\W*системн\w*\W*промпт)\b|
-    \b(твои\W*инструкц\w*)\b|
-    \b(представь\W*себя|действуй\W*как)\b|
-    \b(обойти\W*ограничен\w*|режим\W*разработчика)\b
-    """,
-    re.UNICODE,
-)
-
-# Литеральные фразы для точного поиска
-STOP_PHRASES: List[str] = [
-    # EN
-    "ignore previous instructions",
-    "ignore all previous instructions",
-    "reveal system prompt",
-    "system prompt",
-    "as a friend",
-    "your instructions",
-    "act as",
-    "pretend to be",
-    "developer mode",
-    "jailbreak",
-    "bypass restrictions",
-    "leak prompt",
-    # RU
-    "игнорируй предыдущие инструкции",
-    "игнор предыдущих инструкций",
-    "раскрой системный промпт",
-    "системный промпт",
-    "твои инструкции",
-    "представь себя",
-    "действуй как",
-    "режим разработчика",
-    "обойти ограничения",
-    "слей промпт",
-]
-
-# Aho-Corasick (опционально)
-try:
-    import ahocorasick as _ahoc
-    _HAS_AC = True
-except Exception:
-    _HAS_AC = False
-
-def build_automaton(phrases: List[str]):
-    if not _HAS_AC:
-        return None
-    A = _ahoc.Automaton()
-    for ph in phrases:
-        A.add_word(ph, ph)
-    A.make_automaton()
-    return A
-
-def ac_find(automaton, text: str) -> List[str]:
-    if automaton is None:
-        # Fallback: простая проверка вхождения
-        hits = []
-        for ph in STOP_PHRASES:
-            if ph in text:
-                hits.append(ph)
-        return hits
-    hits = []
-    for _, val in automaton.iter(text):
-        hits.append(val)
-    # Уникализуем
-    return sorted(set(hits))
-
-# Веса для скоринга
-WEIGHTS: Dict[str, int] = {
-    "regex": 3,
-    "phrase": 2,
-}
-
-@dataclass
-class Detection:
-    is_suspicious: bool
-    score: int
-    regex_hits: List[str]
-    phrase_hits: List[str]
-
-class PromptInjectionFilter:
-    def __init__(self, phrases: List[str] | None = None):
-        self.phrases = phrases or STOP_PHRASES
-        self.automaton = build_automaton(self.phrases)
-        if _HAS_AC:
-            logger.info("PromptInjectionFilter: using Aho-Corasick automaton")
-        else:
-            logger.warning("PromptInjectionFilter: using fallback phrase detection")
-
-    @staticmethod
-    def preprocess(text: str) -> str:
-        t = normalize_unicode(text)
-        t = strip_safe_areas(t)
-        return t
-
-    @staticmethod
-    def canonicalize_for_phrases(text: str) -> str:
-        """
-        Для устойчивого поиска фраз: заменяем всё, что не букво-цифра, на один пробел.
-        """
-        t = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
-        return re.sub(r"\s+", " ", t).strip()
-
-    def detect(self, text: str) -> Detection:
-        t = self.preprocess(text)
-        # Поиск по regex
-        regex_hits = []
-        m = SUSPECT_REGEX.finditer(t)
-        for match in m:
-            regex_hits.append(match.group(0))
-        # Поиск по фразам
-        canon = self.canonicalize_for_phrases(t)
-        phrase_hits = ac_find(self.automaton, canon)
-
-        # Скоринг
-        score = WEIGHTS["regex"] * (1 if regex_hits else 0) + WEIGHTS["phrase"] * len(phrase_hits)
-        detection = Detection(
-            is_suspicious=score >= 3,
-            score=score,
-            regex_hits=regex_hits,
-            phrase_hits=phrase_hits,
-        )
-        
-        if detection.is_suspicious:
-            logger.warning(
-                f"Prompt injection detected: score={detection.score}, "
-                f"regex_hits={detection.regex_hits}, "
-                f"phrase_hits={detection.phrase_hits}"
-            )
-        return detection
+from prompt_injection import PromptInjectionFilter
 
 #переменные
 SERVICE_ACCOUNT_ID="ajeuca2m4fqi0sbl8hcc"
@@ -329,6 +153,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверка на инъекцию в промпт
     detection = yandex_bot.injection_filter.detect(user_message)
     if detection.is_suspicious:
+        logger.warning(f"Blocked prompt injection from user {update.effective_user.id}: {user_message}")
         await update.message.reply_text("Ваше сообщение содержит подозрительные инструкции. Пожалуйста, переформулируйте.")
         return
 
