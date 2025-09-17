@@ -1,45 +1,21 @@
 # -*- coding: utf-8 -*-
 import requests
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 import logging
 import jwt
 import time
+import os
 from prompt_injection import PromptInjectionFilter
 
+load_dotenv()
 #переменные
-SERVICE_ACCOUNT_ID="ajeuca2m4fqi0sbl8hcc"
-KEY_ID = "ajebiutqbflp1c4esrtl"
-PRIVATE_KEY ="""-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDUEYXfZL9MPlfE
-VjRbqaoqqwIU3fEHRqfL1SXwD/0o2yxF5WysLtF1eUR8wYooVxjZUbD0Miqn0+EA
-36KTUIWfsE+XebjpP22KvDoiF41B1iJrH+lpyLne9sQY4iGNWPqL8jN18bySFFum
-sSM9YlGZjG8hI1EFKzDctfJLcFcVAGNghFFdwh6z6nmygPZT/AB16HBavg0RKjDD
-equsNZKXQfI4CAX/qucIaer8MDxEOxGvbvCtfgsljqz8rzYAeOi876LyiMIGGsjD
-N/DU5rVQwChG+tTGhfuJ3Xn+fleCU2EayvQlDnI9OrdPM1HaR1gMXSFFF6gklOTN
-OwzssqLXAgMBAAECggEAaKahDsWz1VcqjpwPyHAoplevdka0C+glI+RyjU4GmyPV
-bES0ZR/Rg4wtbPdBS3j3rT6v+UHMZPedIIY7v0DMQCqMjG6n/oqrbvxGH87JiYS3
-hW/BCs/gUZQq3zCwaAVR1r/V/00kxl2/gLoHbuJW7FQt/wdjkw5mVXSANhQhFR4u
-9UatuoIjvzeGx/9QGQ60RfIYKpJRaPsFHlkzyNSs7yuBMhrnLepDHJ1ee/gJGTXf
-HYvCk3X77HX99FLFcIIxxpw1WodC+cXAqRAtJdI6L17D2IlsZ6pu6nHHtKxAy/KG
-5mCZYiDMF7MC73yYiZZVOwNhDNZLFaSFcZ7vrjla8QKBgQDpPZXAUFyIP1KsaFpq
-XQlLa8g4ddsM9pxYUk9Gn38F+M77o9TuzynswlaKnKjxVyWveD3+ihZUuretLbN4
-Dw1KDByLgYXYh3E89T1KcvRoEnufT7IP5rq1nlJo3xIe+dEEyLaURlv8kusvhDyY
-Dv+9zSlxnUwcwj2tMfGE2RRFaQKBgQDoww1yDZyRWt1tj8KSQzeH+HqdOZaXPiW4
-5THOK1G6wq71/wlLMFWHRrJ89jj1eYf3z2TvU5VPw4Dx5/mpepf0A9oY4lnGQQh/
-sfN6B/99OSF/p5545CQZEiyLgMUL6UBwuFJzbn/QRZNGhDWhmC9p60qLybX/qmBP
-xZ37MVFePwKBgAfycjzIQC7gQXfgYlxHaT6poHvUAC+z42XbABp+6rwQWzUVwvaU
-FnCbuokkh1kZyA3vgeU/XT1r00BSU1Ae6yv/t6VFN4NGMiSKkpkLy6oUHyQxefay
-vN/dUh+CokJt7qJEGHx63T2A4ASRc+MWd75G1EervWEpeSKCliEZqGgpAoGBAL4u
-gVHrZT4u7DWU/PndCgaDNEw6vZyeHtxQCL3YD1N1ttcwpztUJs39KeGInUmVH0+P
-mX0i4iDmMPl2/TtI+9dZPl6Os6OVh4gusi3HUy3R/Fj9cDJ+1i/V9aeWc2okD48K
-S/QdGTnnX0qCw/9hBXyZz7MgASEA6OjFIywXQ9CpAoGAGF8a24QlB7U1M83LuiCp
-UDS4f/M+OVY4HvMlHrSkoTUSWduxpsVJ0O0sQUcun9O6uKs5nsrjBn9xvXHVFpPK
-KchfrNcQjii0ljQ3S5ux5PCVBbbVWndKtaXg9IptUiP7fdeSQo/KcVtnCcBIKrCV
-giQkZQF1VB9cL7qptgSNa9U=
------END PRIVATE KEY-----"""
-TELEGRAM_TOKEN = "8350085111:AAEnCNTj4dEvRchH-V8PiucYmyjvWgbQ4AQ"
-FOLDER_ID="b1g3aouolq1tkv2qdrho"
+SERVICE_ACCOUNT_ID=os.getenv('SERVICE_ACCOUNT_ID')
+KEY_ID = os.getenv('KEY_ID')
+PRIVATE_KEY =os.getenv('PRIVATE_KEY')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+FOLDER_ID=os.getenv('FOLDER_ID')
 #Настройки логгирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
 logger = logging.getLogger(__name__)
