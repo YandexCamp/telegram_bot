@@ -2,7 +2,13 @@
 import requests
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters
+)
 import logging
 import jwt
 import time
@@ -10,21 +16,26 @@ import os
 from prompt_injection import PromptInjectionFilter
 
 load_dotenv()
-#переменные
-SERVICE_ACCOUNT_ID=os.getenv('SERVICE_ACCOUNT_ID')
+# переменные
+SERVICE_ACCOUNT_ID = os.getenv('SERVICE_ACCOUNT_ID')
 KEY_ID = os.getenv('KEY_ID')
-PRIVATE_KEY =os.getenv('PRIVATE_KEY')
+PRIVATE_KEY = os.getenv('PRIVATE_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-FOLDER_ID=os.getenv('FOLDER_ID')
-#Настройки логгирования
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',level=logging.INFO)
+FOLDER_ID = os.getenv('FOLDER_ID')
+MODEL_NAME = f"gpt://{FOLDER_ID}/yandexgpt-lite"
+LLM_URL = 'https://llm.api.cloud.yandex.net/foundationModels/v1/completion'
+# Настройки логгирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class YandexGPTBot:
     def __init__(self):
-        self.iam_token=None
-        self.token_expires=0
-        self.injection_filter = PromptInjectionFilter()
+        self.iam_token = None
+        self.token_expires = 0
+        self.injection_filter = PromptInjectionFilter(MODEL_NAME)
 
     def get_iam_token(self):
         """Получение IAM-токена (с кэшированием на 1 час)"""
@@ -84,7 +95,7 @@ class YandexGPTBot:
             }
 
             data = {
-                "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite",
+                "modelUri": MODEL_NAME,
                 "completionOptions": {
                     "stream": False,
                     "temperature": 0.6,
@@ -103,23 +114,26 @@ class YandexGPTBot:
             }
 
             response = requests.post(
-                'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
+                LLM_URL,
                 headers=headers,
                 json=data,
-                timeout=30
-            )
+                timeout=30)
 
             if response.status_code != 200:
                 logger.error(f"Yandex GPT API error: {response.text}")
                 raise Exception(f"Ошибка API: {response.status_code}")
 
+            return response.json()[
+                'result']['alternatives'][0]['message']['text']
             return response.json()['result']['alternatives'][0]['message']['text']
 
         except Exception as e:
             logger.error(f"Error in ask_gpt: {str(e)}")
             raise
 
+
 yandex_bot = YandexGPTBot()
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -127,19 +141,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Привет! Я бот для работы с YaGPT. Напиши свой вопрос"
     )
 
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user_message=update.message.text
+    user_message = update.message.text
 
     if not user_message.strip():
         await update.message.reply_text("Пожалуйста, введите вопрос")
         return
 
     # Проверка на инъекцию в промпт
-    detection = yandex_bot.injection_filter.detect(user_message)
+    detection = yandex_bot.injection_filter.detect_regex(user_message)
     if detection.is_suspicious:
-        logger.warning(f"Blocked prompt injection from user {update.effective_user.id}: {user_message}")
-        await update.message.reply_text("Ваше сообщение содержит подозрительные инструкции. Пожалуйста, переформулируйте.")
+        logger.warning(
+            f"Blocked prompt injection from user (regex)"
+            f" {update.effective_user.id}: {user_message}")
+    if yandex_bot.injection_filter.detect_llm(user_message):
+        await update.message.reply_text(
+                "Я не могу обработать этот запрос. "
+                "Пожалуйста, задавайте вопросы"
+                "в рамках этичного и безопасного диалога."
+        )
         return
 
     try:
@@ -179,7 +201,10 @@ def main():
         application = Application.builder().token(TELEGRAM_TOKEN).build()
 
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                handle_message))
         application.add_error_handler(error_handler)
 
         logger.info("Бот запускается...")
