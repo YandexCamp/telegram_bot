@@ -153,15 +153,52 @@ class YandexGPTBot:
                 "messages": messages
             }
 
-            response = requests.post(LLM_URL, headers=headers, json=data, timeout=30)
+            req_body = {
+                "headers": headers,
+                "payload": data,
+                "LLM_URL": LLM_URL,
+            }
+
+            response = requests.post("http://localhost:8888/api/llm_agent", json=req_body, timeout=30)
             if response.status_code != 200:
                 logger.error(f"Yandex GPT API error: {response.text}")
                 raise Exception(f"Ошибка API: {response.status_code}")
-            return response.json()['result']['alternatives'][0]['message']['text']
+            return response.json()["gen_text"]
 
         except Exception as e:
             logger.error(f"Error in ask_gpt: {str(e)}")
             raise
+
+    # def ask_gpt(self, messages):
+    #     """Запрос к Yandex GPT API с историей сообщений"""
+    #     try:
+    #         iam_token = self.get_iam_token()
+
+    #         headers = {
+    #             'Content-Type': 'application/json',
+    #             'Authorization': f'Bearer {iam_token}',
+    #             'x-folder-id': FOLDER_ID
+    #         }
+
+    #         data = {
+    #             "modelUri": MODEL_NAME,
+    #             "completionOptions": {
+    #                 "stream": False,
+    #                 "temperature": 0.6,
+    #                 "maxTokens": 2000
+    #             },
+    #             "messages": messages
+    #         }
+
+    #         response = requests.post(LLM_URL, headers=headers, json=data, timeout=30)
+    #         if response.status_code != 200:
+    #             logger.error(f"Yandex GPT API error: {response.text}")
+    #             raise Exception(f"Ошибка API: {response.status_code}")
+    #         return response.json()['result']['alternatives'][0]['message']['text']
+
+    #     except Exception as e:
+    #         logger.error(f"Error in ask_gpt: {str(e)}")
+    #         raise
 
     def initialize_rag(self):
         """Инициализация RAG системы"""

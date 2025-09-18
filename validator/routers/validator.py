@@ -118,6 +118,12 @@ class PromptInjectionFilter:
             ]
         }
 
+        req_body = {
+                "headers": headers,
+                "payload": payload,
+                "LLM_URL": LLM_URL,
+            }
+
         # Пролог запроса
         body_preview, body_hash, body_len = _safe_json(payload, limit=1500)
         logger.info(
@@ -136,10 +142,9 @@ class PromptInjectionFilter:
         t0 = time.time()
         try:
             resp = requests.post(
-                LLM_URL,
-                headers=headers,
-                json=payload,
-                timeout=15)
+                "http://localhost:8888/api/llm_agent",
+                json=req_body,
+                timeout=30)
             dt = time.time() - t0
 
             # Заголовки ответа для поддержки
@@ -163,10 +168,7 @@ class PromptInjectionFilter:
             resp.raise_for_status()
             data = resp.json()
             answer = (
-                data.get("result", {})
-                .get("alternatives", [{}])[0]
-                .get("message", {})
-                .get("text", "")
+                data['gen_text']
                 .strip()
                 .upper()
             )
