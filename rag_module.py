@@ -99,7 +99,8 @@ class YandexRAG:
             for obj in response['Contents']:
                 key = obj['Key']
                 # Поддерживаем различные форматы файлов
-                if not any(key.endswith(ext) for ext in ['.txt', '.md', '.rtf']):
+                if not any(key.endswith(ext)
+                           for ext in ['.txt', '.md', '.rtf']):
                     continue
 
                 local_path = os.path.join(tmpdir, os.path.basename(key))
@@ -187,7 +188,8 @@ class YandexRAG:
 
         try:
             if not os.path.exists(f"{VECTORSTORE_PATH}/index.faiss"):
-                logger.info("Векторное хранилище не найдено, требуется инициализация")
+                logger.info(
+                    "Векторное хранилище не найдено, требуется инициализация")
                 return False
 
             self.vectorstore = FAISS.load_local(
@@ -223,7 +225,10 @@ class YandexRAG:
 
         return self.build_vectorstore(chunks)
 
-    def retrieve_documents(self, query: str, top_k: int = TOP_K_RESULTS) -> List[RetrievedDocument]:
+    def retrieve_documents(
+            self,
+            query: str,
+            top_k: int = TOP_K_RESULTS) -> List[RetrievedDocument]:
         """Поиск релевантных документов с ранжированием"""
         if not self.vectorstore:
             if not self.load_vectorstore():
@@ -245,14 +250,18 @@ class YandexRAG:
                 )
                 retrieved_docs.append(retrieved_doc)
 
-            logger.info(f"Найдено {len(retrieved_docs)} релевантных документов для запроса")
+            logger.info(
+                f"Найдено {len(retrieved_docs)} "
+                "релевантных документов для запроса")
             return retrieved_docs
 
         except Exception as e:
             logger.error(f"Ошибка поиска документов: {e}")
             return []
 
-    def format_context_for_llm(self, retrieved_docs: List[RetrievedDocument]) -> str:
+    def format_context_for_llm(
+            self,
+            retrieved_docs: List[RetrievedDocument]) -> str:
         """Форматирование контекста для передачи в LLM"""
         if not retrieved_docs:
             return "Релевантная информация в документах не найдена."

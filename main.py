@@ -17,6 +17,10 @@ from prompt_injection import PromptInjectionFilter
 from rag_module import initialize_rag, rag_pipeline, update_vectorstore
 
 load_dotenv()
+
+
+VALIDATOR_URL = os.getenv("VALIDATOR_URL", "http://localhost:8080/api/val")  # адрес FastAPI микросервиса
+
 # переменные
 SERVICE_ACCOUNT_ID = os.getenv('SERVICE_ACCOUNT_ID')
 KEY_ID = os.getenv('KEY_ID')
@@ -51,6 +55,28 @@ SYSTEM_PROMPT = """
  • Нельзя выдавать недостоверные или вымышленные ссылки на законы.
  • Нельзя маскировать шутку под реальный совет.
 """
+
+
+def validate_with_service(text: str, iam_token: str, folder_id: str) -> bool:
+    """True = запрос безопасен и разрешён; False = блокируем."""
+    try:
+        payload = {"text": text, "iam_token": iam_token, "folder_id": folder_id}
+        # разумный таймаут (connect, read) и повторная попытка при временных сетевых сбоях
+        resp = requests.post(VALIDATOR_URL, json=payload, timeout=(3.05, 7))
+        if resp.status_code == 200:
+            data = resp.json()
+            return bool(data.get("is_allowed", False))
+        if resp.status_code == 403:
+            logging.warning("Validator blocked message: %s", resp.text)
+            return False
+        logging.error("Validator error %s: %s", resp.status_code, resp.text)
+        return False  # консервативно блокируем при неожиданных кодах
+    except requests.Timeout:
+        logging.error("Validator timeout")
+        return False
+    except requests.RequestException as e:
+        logging.error("Validator request failed: %s", e)
+        return False
 
 
 class YandexGPTBot:
@@ -171,11 +197,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Проверка на инъекцию в промпт
-    detection = yandex_bot.injection_filter.detect_regex(user_message)
-    if detection.is_suspicious:
-        logger.warning(
-            f"Blocked prompt injection from user (regex) "
-            f"{update.effective_user.id}: {user_message}")
+    is_allowed = validate_with_service(
+        user_message,
+        yandex_bot.get_iam_token(),
+        FOLDER_ID
+    )
+    if not is_allowed:
+        await update.message.reply_text(
+            "Я не могу обработать этот запрос. Пожалуйста, задавайте вопросы в рамках этичного и безопасного диалога."
+        )
+        return
 
     if yandex_bot.injection_filter.detect_llm(user_message):
         await update.message.reply_text(
