@@ -14,21 +14,25 @@ logger = logging.getLogger(__name__)
 ZW_CLASS = "[\u200B\u200C\u200D\u2060\uFEFF]"
 LLM_URL = 'https://llm.api.cloud.yandex.net/foundationModels/v1/completion'
 
+
 def normalize_unicode(text: str) -> str:
     t = unicodedata.normalize("NFKC", text).casefold()
     t = re.sub(ZW_CLASS, "", t)
     t = re.sub(r"[ \t\r\f\v]+", " ", t)
     return t.strip()
 
+
 RE_CODE_BLOCK = re.compile(r"``````", re.DOTALL | re.IGNORECASE)
 RE_INLINE_CODE = re.compile(r"`[^`\n]+`", re.IGNORECASE)
 RE_URL = re.compile(r"https?://\S+", re.IGNORECASE)
+
 
 def strip_safe_areas(text: str) -> str:
     t = RE_CODE_BLOCK.sub(" ", text)
     t = RE_INLINE_CODE.sub(" ", t)
     t = RE_URL.sub(" ", t)
     return t
+
 
 def _safe_json(obj, limit: int = 2000):
     """
@@ -193,12 +197,14 @@ INJECTION_PATTERNS = [
 ]
 COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE | re.UNICODE) for p in INJECTION_PATTERNS]
 
+
 @dataclass
 class Detection:
     is_suspicious: bool
     score: int
     regex_hits: List[str]
     phrase_hits: List[str]
+
 
 class PromptInjectionFilter:
     def __init__(self, model_name: str, folder_id: Optional[str] = None, token_getter: Optional[Callable[[], str]] = None):
