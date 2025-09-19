@@ -268,7 +268,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
       "Привет! Меня зовут Сол. Готов ответить на твои вопросы о законах и Конституции. "
       "Только помни, что я всего лишь бот и за настоящей юридической консультацией нужно обратиться к профессионалу!"
     )
-    await update.message.reply_text(welcome_message)
+    await update.message.reply_markdown(welcome_message)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -278,19 +278,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username if update.effective_user else None
 
     if not user_message.strip():
-        await update.message.reply_text("Пожалуйста, введите вопрос")
+        await update.message.reply_markdown("Пожалуйста, введите вопрос")
         return
 
     # Проверка на инъекцию в промпт
     is_allowed = validate_with_service(user_message, yandex_bot.get_iam_token(), FOLDER_ID)
     if not is_allowed:
-        await update.message.reply_text(
+        await update.message.reply_markdown(
             "Я не могу обработать этот запрос. Пожалуйста, задавайте вопросы в рамках этичного и безопасного диалога."
         )
         return
 
     if yandex_bot.injection_filter.detect_llm(user_message):
-        await update.message.reply_text(
+        await update.message.reply_markdown(
             "Я не могу обработать этот запрос. "
             "Пожалуйста, задавайте вопросы "
             "в рамках этичного и безопасного диалога."
@@ -352,21 +352,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(yandex_bot.history[chat_id]) > 10:
             yandex_bot.history[chat_id] = [yandex_bot.history[chat_id][0]] + yandex_bot.history[chat_id][-9:]
 
-        # Вместо локального YandexGPTBot отправляем запрос в микросервис Telegram бота
-        response_text = requests.post(
-            TELEGRAM_SERVICE_URL + "/",
-            json={
-                "chat_id": chat_id,
-                "user_id": user_id,
-                "message_text": enhanced_message,
-                "username": username,
-            },
-            timeout=(3.05, 20)
-        )
-        if response_text.status_code == 200:
-            await update.message.reply_text(response_text.json().get("response_text", ""))
-        else:
-            await update.message.reply_text("Извините, произошла ошибка при обращении к сервису бота")
+        # Отправляем всю историю сообщений
+        response = yandex_bot.ask_gpt(yandex_bot.history[chat_id])
+
+        # Добавляем ответ ассистента в историю (без контекста)
+        yandex_bot.history[chat_id].append({
+            "role": "assistant",
+            "text": response
+        })
+
+        await update.message.reply_markdown(response)
 
     except Exception as e:
         logger.error(f"Error handling message: {str(e)}")
@@ -374,7 +369,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat_id in yandex_bot.history and yandex_bot.history[chat_id][-1]["role"] == "user":
             yandex_bot.history[chat_id].pop()
 
-        await update.message.reply_text(
+        await update.message.reply_markdown(
             "Извините, произошла ошибка при обработке вашего запроса. "
             "Пожалуйста, попробуйте позже."
         )
@@ -384,7 +379,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"Update {update} caused error {context.error}")
     if update and update.effective_message:
-        await update.effective_message.reply_text(
+        await update.effective_message.reply_markdown(
             "Произошла ошибка. Пожалуйста, попробуйте позже."
         )
 
@@ -394,7 +389,7 @@ async def clear_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id in yandex_bot.history:
         del yandex_bot.history[chat_id]
-    await update.message.reply_text("🧹 История диалога очищена. Начните новый диалог.")
+    await update.message.reply_markdown("🧹 История диалога очищена. Начните новый диалог.")
 
 
 async def rag_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -407,7 +402,7 @@ async def rag_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         message += "⚠️ Система работает без контекстного поиска.\nИспользуется только базовая модель."
 
-    await update.message.reply_text(message)
+    await update.message.reply_markdown(message)
 
 
 async def rag_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -416,10 +411,10 @@ async def rag_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_ids = []
 
     if update.effective_user.id not in admin_ids:
-        await update.message.reply_text("❌ У вас нет прав для выполнения этой команды.")
+        await update.message.reply_markdown("❌ У вас нет прав для выполнения этой команды.")
         return
 
-    await update.message.reply_text("🔄 Начинаю обновление базы документов...")
+    await update.message.reply_markdown("🔄 Начинаю обновление базы документов...")
 
     try:
         await context.bot.send_chat_action(
@@ -432,19 +427,19 @@ async def rag_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if success:
             yandex_bot.rag_enabled = True
-            await update.message.reply_text(
+            await update.message.reply_markdown(
                 "✅ База документов успешно обновлена!\n"
                 "🔍 RAG система активирована."
             )
         else:
-            await update.message.reply_text(
+            await update.message.reply_markdown(
                 "❌ Ошибка при обновлении базы документов.\n"
                 "Проверьте логи для подробной информации."
             )
 
     except Exception as e:
         logger.error(f"Ошибка обновления RAG: {e}")
-        await update.message.reply_text(
+        await update.message.reply_markdown(
             "❌ Произошла ошибка при обновлении базы документов."
         )
 
