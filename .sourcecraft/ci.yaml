@@ -1,0 +1,28 @@
+on:
+  pull_request:
+    - workflows: ci-cd-all-services
+      filter:
+        source_branches: ["**"]
+        target_branches: "dev"
+  
+  push:
+    - workflows: ci-cd-all-services
+      filter:
+        branches: ["dev", "Ksenia"]
+
+workflows:
+  ci-cd-all-services:
+    tasks:
+     - build-push-deploy-all
+
+tasks:
+  - name: build-push-deploy-all
+    env:
+      DOCKER_URI: pass
+      SERVICE_ACCOUNT_ID: ajeef37vehcnp3fd6pdh
+      KEY: ajeu9olmucc2et5b5qhe
+      FOLDER_ID: b1gvqcgk8t2ql3q6lij4
+    cubes:
+      - name: test
+        script:
+          - echo "Hello, world!"
