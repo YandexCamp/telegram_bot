@@ -30,10 +30,6 @@ CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 TOP_K_RESULTS = 3
 
-# Флаг для временного отключения embeddings
-# По умолчанию embeddings ВКЛЮЧЕНЫ; чтобы отключить, установите DISABLE_EMBEDDINGS=true
-DISABLE_EMBEDDINGS = os.getenv('DISABLE_EMBEDDINGS', 'false').lower() == 'true'
-
 
 @dataclass
 class RetrievedDocument:
@@ -86,11 +82,6 @@ class YandexRAG:
 
     def _init_embeddings(self):
         """Инициализация модели эмбеддингов"""
-        if DISABLE_EMBEDDINGS:
-            logger.info("Embeddings отключены (DISABLE_EMBEDDINGS=true)")
-            self.embeddings = None
-            return
-
         try:
             self.embeddings = HuggingFaceEmbeddings(
                 model_name=EMBEDDING_MODEL,
@@ -184,7 +175,7 @@ class YandexRAG:
             return False
 
         if not self.embeddings:
-            logger.info("Пропускаем создание векторного хранилища: embeddings отключены")
+            logger.error("Модель эмбеддингов не инициализирована")
             return False
 
         try:
@@ -204,7 +195,7 @@ class YandexRAG:
     def load_vectorstore(self) -> bool:
         """Загрузка векторного хранилища с диска"""
         if not self.embeddings:
-            logger.info("Пропускаем загрузку векторного хранилища: embeddings отключены")
+            logger.error("Модель эмбеддингов не инициализирована")
             return False
 
         try:
@@ -228,11 +219,6 @@ class YandexRAG:
     def initialize_rag_system(self) -> bool:
         """Полная инициализация RAG системы"""
         logger.info("Начинаем инициализацию RAG системы...")
-
-        # Если embeddings отключены, запускаемся в "облегчённом" режиме без индекса
-        if not self.embeddings:
-            logger.warning("Embeddings отключены — индекс не будет инициализирован (работа без RAG поиска)")
-            return True
 
         # Пытаемся загрузить существующее векторное хранилище
         if self.load_vectorstore():
@@ -260,7 +246,7 @@ class YandexRAG:
         """Поиск релевантных документов с ранжированием"""
         if not self.vectorstore:
             if not self.load_vectorstore():
-                logger.info("Векторное хранилище недоступно — возвращаем пустой результат")
+                logger.error("Векторное хранилище недоступно")
                 return []
 
         try:
