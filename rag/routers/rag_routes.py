@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 import logging
-from ..models import RAGRequest, RAGResult, DocumentResult
-from .rag import YandexRAG
+from models import RAGRequest, RAGResult, DocumentResult
+from routers.rag import YandexRAG
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

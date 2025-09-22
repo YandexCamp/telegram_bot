@@ -22,3 +22,4 @@ class BotStatus(BaseModel):
     status: str
     message: str
 
+

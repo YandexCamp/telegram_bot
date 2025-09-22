@@ -3,8 +3,8 @@ import uvicorn
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from .routers import router
-from .routers.rag import YandexRAG
+from routers import router
+from routers.rag import YandexRAG
 
 logging.basicConfig(
     level=logging.INFO,
