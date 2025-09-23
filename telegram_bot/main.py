@@ -37,8 +37,7 @@ async def shutdown_event():
     """Очистка при остановке"""
     logger.info("🛑 Telegram Bot Service остановлен")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+
 
 async def main():
     uvicorn.run(
@@ -48,3 +47,7 @@ async def main():
         reload=True,
         log_level="debug",
     )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

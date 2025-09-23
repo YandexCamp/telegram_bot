@@ -17,9 +17,9 @@ from prompt_injection import PromptInjectionFilter
 load_dotenv(find_dotenv())
 
 # URLs of microservices
-VALIDATOR_URL = os.getenv("VALIDATOR_URL", "http://localhost:8080/api/val")
-LLM_AGENT_URL = os.getenv("LLM_AGENT_URL", "http://localhost:8888/api/llm_agent")
-RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8082")
+VALIDATOR_URL = os.getenv("VALIDATOR_URL", "http://validator:8080/api/val")
+LLM_AGENT_URL = os.getenv("LLM_AGENT_URL", "http://llm_agent.:8888/api/llm_agent")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag:8082")
 RAG_API_URL = f"{RAG_SERVICE_URL}/api/rag"
 
 # Cloud & Bot env
@@ -291,13 +291,37 @@ def build_application() -> Application:
     return app
 
 
+import asyncio
+
 def _run_polling_blocking() -> None:
-    try:
-        app = build_application()
-        logger.info("Бот запускается (polling)...")
-        app.run_polling()
-    except Exception as e:
-        logger.error(f"Failed to start bot: {e}")
+    async def runner():
+        try:
+            app = build_application()
+            logger.info("Бот запускается (polling)...")
+            
+            # Ручной жизненный цикл
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+            
+            # Держим бота живым
+            try:
+                while True:
+                    await asyncio.sleep(3600)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                # Корректная остановка
+                await app.updater.stop()
+                await app.stop()
+                await app.shutdown()
+                
+        except Exception as e:
+            logger.error(f"Failed to start bot: {e}")
+    
+    # Запускаем в новом event loop
+    asyncio.run(runner())
+
 
 
 def start_bot_in_background() -> None:

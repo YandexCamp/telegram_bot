@@ -142,7 +142,7 @@ class PromptInjectionFilter:
         t0 = time.time()
         try:
             resp = requests.post(
-                "http://localhost:8888/api/llm_agent",
+                "http://llm_agent:8888/api/llm_agent",
                 json=req_body,
                 timeout=30)
             dt = time.time() - t0

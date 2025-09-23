@@ -11,7 +11,7 @@ app.include_router(router)
 async def main():
     uvicorn.run(
         "main:app",
-        host="localhost",
+        host="0.0.0.0",
         port=8888,
         reload=True,
         log_level="debug",
