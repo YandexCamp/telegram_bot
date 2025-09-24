@@ -1,6 +1,6 @@
-import asyncio
 import uvicorn
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from routers import router
@@ -28,7 +28,10 @@ async def lifespan(app: FastAPI):
         if success:
             logger.info("RAG system initialized successfully")
         else:
-            logger.warning("RAG system initialization failed - service will start but search may not work")
+            logger.warning(
+                "RAG system initialization failed - service will "
+                "start but search may not work"
+            )
     except Exception as e:
         logger.error(f"Error during RAG initialization: {e}")
 
@@ -39,7 +42,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="RAG Service",
-    description="RAG (Retrieval-Augmented Generation) service for document search",
+    description="RAG (Retrieval-Augmented Generation) "
+    "service for document search",
     version="1.0.0",
     debug=True,
     lifespan=lifespan
