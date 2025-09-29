@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+requests
+langchain
+langchain-community
+boto3
+sentence-transformers
+faiss-cpu
+python-dotenv

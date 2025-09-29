@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+requests
+PyJWT
+cryptography
+sentence-transformers
+python-dotenv
+python-telegram-bot
+slowapi
+python-telegram-bot[rate-limiter]
